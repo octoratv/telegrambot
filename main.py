@@ -1,4 +1,12 @@
 import os
+
+TOKEN = os.getenv("TOKEN")
+
+print("TOKEN DEĞERİ:", TOKEN)
+
+if not TOKEN:
+    raise ValueError("TOKEN YOK!")
+import os
 import asyncio
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup

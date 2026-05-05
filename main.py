@@ -1,6 +1,13 @@
-from telegram import Bot
+import os
 import asyncio
+from telegram import Bot
 
+TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    raise ValueError("TOKEN YOK!")
+
+# webhook temizle
 bot = Bot(TOKEN)
 asyncio.run(bot.delete_webhook(drop_pending_updates=True))
 import os

@@ -7,7 +7,7 @@ from telegram.ext import (
     ContextTypes, CallbackQueryHandler, filters
 )
 
-TOKEN = os.getenv("8748813405:AAHKhhY9-ArdUzZLnDmKXbKk68M_ZzKPqwQ")
+TOKEN = os.getenv("TOKEN")
 
 ADMIN_ID = 123456789
 TARGET_CHANNEL = -1003993758461

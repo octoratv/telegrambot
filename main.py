@@ -1,3 +1,8 @@
+from telegram import Bot
+import asyncio
+
+bot = Bot(TOKEN)
+asyncio.run(bot.delete_webhook(drop_pending_updates=True))
 import os
 
 TOKEN = os.getenv("TOKEN")

@@ -222,13 +222,17 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- APP ---
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(MessageHandler(filters.ALL, handle_channel))
-app.add_handler(CallbackQueryHandler(button))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
-
+# 🔹 ÖNCE KOMUTLAR
 app.add_handler(CommandHandler("auto_on", auto_on))
 app.add_handler(CommandHandler("auto_off", auto_off))
 app.add_handler(CommandHandler("durum", status))
+
+# 🔹 SONRA BUTON VE NORMAL MESAJ
+app.add_handler(CallbackQueryHandler(button))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
+
+# 🔹 EN SON KANAL DİNLEME
+app.add_handler(MessageHandler(filters.ChatType.CHANNEL, handle_channel))
 
 print("Bot çalışıyor...")
 app.run_polling()

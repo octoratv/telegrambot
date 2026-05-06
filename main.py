@@ -1,37 +1,31 @@
 import os
 import asyncio
-from telegram import Bot
-
-TOKEN = os.getenv("TOKEN")
-
-if not TOKEN:
-    raise ValueError("TOKEN YOK!")
-
-# webhook temizle
-bot = Bot(TOKEN)
-asyncio.run(bot.delete_webhook(drop_pending_updates=True))
-import os
-
-TOKEN = os.getenv("TOKEN")
-
-print("TOKEN DEĞERİ:", TOKEN)
-
-if not TOKEN:
-    raise ValueError("TOKEN YOK!")
-import os
-import asyncio
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ContextTypes, CallbackQueryHandler, filters
 )
 
+# --- TOKEN ---
 TOKEN = os.getenv("TOKEN")
 
+if not TOKEN:
+    raise ValueError("TOKEN YOK!")
+
+print("TOKEN OK")
+
+# --- WEBHOOK TEMİZLE (Conflict fix) ---
+async def clear_webhook():
+    bot = Bot(TOKEN)
+    await bot.delete_webhook(drop_pending_updates=True)
+
+asyncio.run(clear_webhook())
+
+# --- AYARLAR ---
 ADMIN_ID = 1118580992
-TARGET_CHANNEL = -1003993758461
-SOURCE_CHANNEL = -1002668690958
+TARGET_CHANNEL = -1003993758461   # SENİN KANAL
+SOURCE_CHANNEL = -1002668690958   # KAYNAK KANAL
 
 AUTO_MODE = False
 user_states = {}
@@ -39,7 +33,7 @@ pending_posts = {}
 
 # --- METİN DEĞİŞTİRME ---
 REPLACEMENTS = {
-    "Titan Panel": "Octora Tv"
+    "titan panel": "Octora Tv"
 }
 
 def replace_text(text):
@@ -77,7 +71,7 @@ async def send_content(context, chat_id, content):
         print("Gönderim hatası:", e)
 
 
-# --- SCHEDULE ---
+# --- ZAMANLAMA ---
 async def schedule_post(context, chat_id, content, send_time):
     delay = (send_time - datetime.now()).total_seconds()
 
@@ -87,7 +81,7 @@ async def schedule_post(context, chat_id, content, send_time):
     await send_content(context, chat_id, content)
 
 
-# --- CHANNEL DINLEME ---
+# --- KANAL DİNLEME ---
 async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global AUTO_MODE
 
@@ -113,12 +107,12 @@ async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content["type"] = "video"
         content["file_id"] = message.video.file_id
 
-    # AUTO MODE
+    # --- AUTO MODE ---
     if AUTO_MODE:
         await send_content(context, TARGET_CHANNEL, content)
         return
 
-    # MANUEL MODE
+    # --- MANUEL MODE ---
     keyboard = [[
         InlineKeyboardButton("✅ Paylaş", callback_data="approve"),
         InlineKeyboardButton("✏️ Düzenle", callback_data="edit"),
@@ -128,14 +122,17 @@ async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pending_posts[ADMIN_ID] = content
 
-    await context.bot.send_message(
-        ADMIN_ID,
-        f"Yeni içerik:\n\n{content['text']}",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    try:
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"Yeni içerik:\n\n{content['text']}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    except Exception as e:
+        print("ADMIN mesaj hatası:", e)
 
 
-# --- BUTONLAR ---
+# --- BUTON ---
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -213,7 +210,7 @@ async def auto_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("AUTO KAPALI")
 
 
-# --- DURUM KOMUTU ---
+# --- DURUM ---
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -221,9 +218,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = "AÇIK" if AUTO_MODE else "KAPALI"
 
     await update.message.reply_text(
-        f"🤖 Bot Durumu:\n\n"
-        f"AUTO MODE: {mode}\n"
-        f"Bot aktif ve çalışıyor."
+        f"🤖 Bot Durumu:\n\nAUTO MODE: {mode}"
     )
 
 

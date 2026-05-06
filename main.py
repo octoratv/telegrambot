@@ -16,11 +16,8 @@ if not TOKEN:
 print("TOKEN OK")
 
 # --- WEBHOOK TEMİZLE (Conflict fix) ---
-async def clear_webhook():
-    bot = Bot(TOKEN)
-    await bot.delete_webhook(drop_pending_updates=True)
-
-asyncio.run(clear_webhook())
+async def post_init(app):
+    await app.bot.delete_webhook(drop_pending_updates=True)
 
 # --- AYARLAR ---
 ADMIN_ID = 1118580992

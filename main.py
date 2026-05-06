@@ -1,7 +1,8 @@
 import os
 import asyncio
-from datetime import datetime, timedelta
+import re
 from collections import deque
+from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -23,35 +24,27 @@ TARGET_CHANNEL = -1003993758461
 SOURCE_CHANNEL = -1002668690958
 
 AUTO_MODE = False
-
 user_states = {}
 
-# 🔥 FIFO QUEUE (EN ÖNEMLİ UPGRADE)
+# 🔥 FIFO QUEUE
 pending_queue = deque()
 
 # --- METİN DEĞİŞTİRME ---
 REPLACEMENTS = {
-    "Titan Panel": "Octora Tv"
+    r"Titan Panel iyi seyirler diler[!.]?": "Octora Tv iyi seyirler diler!"
 }
 
 def replace_text(text):
     if not text:
         return text
 
-    lower_text = text.lower()
-
-    for old, new in REPLACEMENTS.items():
-        if old in lower_text:
-            start = lower_text.index(old)
-            end = start + len(old)
-            text = text[:start] + new + text[end:]
+    for pattern, new in REPLACEMENTS.items():
+        text = re.sub(pattern, new, text, flags=re.IGNORECASE)
 
     return text
 
-
 def process_text(text):
     return replace_text(text)
-
 
 # --- GÖNDER ---
 async def send_content(context, chat_id, content):
@@ -68,17 +61,14 @@ async def send_content(context, chat_id, content):
     except Exception as e:
         print("Gönderim hatası:", e)
 
-
-# --- FIFO HELPERS ---
+# --- QUEUE ---
 def add_to_queue(content):
     pending_queue.append(content)
-
 
 def get_next_post():
     if pending_queue:
         return pending_queue.popleft()
     return None
-
 
 # --- KANAL DİNLEME ---
 async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +101,7 @@ async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_content(context, TARGET_CHANNEL, content)
         return
 
-    # 🔥 FIFO QUEUE'YA EKLE
+    # --- QUEUE EKLE ---
     add_to_queue(content)
 
     keyboard = [[
@@ -126,7 +116,6 @@ async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-
 # --- BUTON ---
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -139,16 +128,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content = get_next_post()
         if content:
             await send_content(context, TARGET_CHANNEL, content)
+        else:
+            await query.message.reply_text("Queue boş")
 
     elif query.data == "next":
         content = get_next_post()
         if content:
-            await query.message.reply_text(f"Sıradaki:\n\n{content.get('text','')}")
+            await query.message.reply_text(f"Sıradaki:\n\n{content.get('text','(metin yok)')}")
+        else:
+            await query.message.reply_text("Queue boş")
 
     elif query.data == "delete":
         removed = get_next_post()
-        await query.message.reply_text("Silindi")
-
+        if removed:
+            await query.message.reply_text("Silindi")
+        else:
+            await query.message.reply_text("Queue boş")
 
 # --- TEXT INPUT ---
 async def text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,9 +160,10 @@ async def text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if content:
             content["text"] = process_text(update.message.text)
             await send_content(context, TARGET_CHANNEL, content)
+        else:
+            await update.message.reply_text("Queue boş")
 
         user_states[user_id] = None
-
 
 # --- AUTO MODE ---
 async def auto_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -176,13 +172,11 @@ async def auto_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
         AUTO_MODE = True
         await update.message.reply_text("AUTO AÇIK")
 
-
 async def auto_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global AUTO_MODE
     if update.effective_user.id == ADMIN_ID:
         AUTO_MODE = False
         await update.message.reply_text("AUTO KAPALI")
-
 
 # --- DURUM ---
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -195,7 +189,6 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"QUEUE: {len(pending_queue)}"
     )
 
-
 # --- APP ---
 app = ApplicationBuilder().token(TOKEN).build()
 
@@ -205,7 +198,6 @@ app.add_handler(CommandHandler("durum", status))
 
 app.add_handler(CallbackQueryHandler(button))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
-
 app.add_handler(MessageHandler(filters.ChatType.CHANNEL, handle_channel))
 
 print("Bot çalışıyor...")

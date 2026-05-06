@@ -1,7 +1,9 @@
 import os
 import asyncio
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from datetime import datetime, timedelta
+from collections import deque
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ContextTypes, CallbackQueryHandler, filters
@@ -15,22 +17,21 @@ if not TOKEN:
 
 print("TOKEN OK")
 
-# --- WEBHOOK TEMİZLE (Conflict fix) ---
-async def post_init(app):
-    await app.bot.delete_webhook(drop_pending_updates=True)
-
 # --- AYARLAR ---
 ADMIN_ID = 1118580992
-TARGET_CHANNEL = -1003993758461   # SENİN KANAL
-SOURCE_CHANNEL = -1002668690958   # KAYNAK KANAL
+TARGET_CHANNEL = -1003993758461
+SOURCE_CHANNEL = -1002668690958
 
 AUTO_MODE = False
+
 user_states = {}
-pending_posts = {}
+
+# 🔥 FIFO QUEUE (EN ÖNEMLİ UPGRADE)
+pending_queue = deque()
 
 # --- METİN DEĞİŞTİRME ---
 REPLACEMENTS = {
-    "Titan Panel": "Octora Tv"
+    "titan panel": "Octora Tv"
 }
 
 def replace_text(text):
@@ -68,14 +69,15 @@ async def send_content(context, chat_id, content):
         print("Gönderim hatası:", e)
 
 
-# --- ZAMANLAMA ---
-async def schedule_post(context, chat_id, content, send_time):
-    delay = (send_time - datetime.now()).total_seconds()
+# --- FIFO HELPERS ---
+def add_to_queue(content):
+    pending_queue.append(content)
 
-    if delay > 0:
-        await asyncio.sleep(delay)
 
-    await send_content(context, chat_id, content)
+def get_next_post():
+    if pending_queue:
+        return pending_queue.popleft()
+    return None
 
 
 # --- KANAL DİNLEME ---
@@ -109,24 +111,20 @@ async def handle_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_content(context, TARGET_CHANNEL, content)
         return
 
-    # --- MANUEL MODE ---
+    # 🔥 FIFO QUEUE'YA EKLE
+    add_to_queue(content)
+
     keyboard = [[
-        InlineKeyboardButton("✅ Paylaş", callback_data="approve"),
-        InlineKeyboardButton("✏️ Düzenle", callback_data="edit"),
-        InlineKeyboardButton("⏱ Zamanla", callback_data="schedule"),
+        InlineKeyboardButton("✅ Gönder", callback_data="approve"),
+        InlineKeyboardButton("⏭ Sonraki", callback_data="next"),
         InlineKeyboardButton("❌ Sil", callback_data="delete")
     ]]
 
-    pending_posts[ADMIN_ID] = content
-
-    try:
-        await context.bot.send_message(
-            ADMIN_ID,
-            f"Yeni içerik:\n\n{content['text']}",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    except Exception as e:
-        print("ADMIN mesaj hatası:", e)
+    await context.bot.send_message(
+        ADMIN_ID,
+        f"Yeni içerik kuyruğa eklendi.\nQueue: {len(pending_queue)}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 # --- BUTON ---
@@ -137,22 +135,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.from_user.id != ADMIN_ID:
         return
 
-    content = pending_posts.get(ADMIN_ID)
-    if not content:
-        return
-
     if query.data == "approve":
-        await send_content(context, TARGET_CHANNEL, content)
+        content = get_next_post()
+        if content:
+            await send_content(context, TARGET_CHANNEL, content)
 
-    elif query.data == "edit":
-        user_states[ADMIN_ID] = "editing"
-        await query.message.reply_text("Yeni metni gönder:")
-
-    elif query.data == "schedule":
-        user_states[ADMIN_ID] = "scheduling"
-        await query.message.reply_text("Saat gir (18:30)")
+    elif query.data == "next":
+        content = get_next_post()
+        if content:
+            await query.message.reply_text(f"Sıradaki:\n\n{content.get('text','')}")
 
     elif query.data == "delete":
+        removed = get_next_post()
         await query.message.reply_text("Silindi")
 
 
@@ -166,30 +160,13 @@ async def text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = user_states.get(user_id)
 
     if state == "editing":
-        content = pending_posts[user_id]
-        content["text"] = process_text(update.message.text)
+        content = pending_queue[-1] if pending_queue else None
 
-        await send_content(context, TARGET_CHANNEL, content)
+        if content:
+            content["text"] = process_text(update.message.text)
+            await send_content(context, TARGET_CHANNEL, content)
+
         user_states[user_id] = None
-
-    elif state == "scheduling":
-        try:
-            hour, minute = map(int, update.message.text.split(":"))
-            now = datetime.now()
-
-            send_time = now.replace(hour=hour, minute=minute, second=0)
-
-            if send_time < now:
-                send_time = send_time.replace(day=now.day + 1)
-
-            content = pending_posts[user_id]
-
-            asyncio.create_task(schedule_post(context, TARGET_CHANNEL, content, send_time))
-
-            await update.message.reply_text("Zamanlandı")
-
-        except:
-            await update.message.reply_text("Hatalı saat formatı")
 
 
 # --- AUTO MODE ---
@@ -212,26 +189,23 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    mode = "AÇIK" if AUTO_MODE else "KAPALI"
-
     await update.message.reply_text(
-        f"🤖 Bot Durumu:\n\nAUTO MODE: {mode}"
+        f"🤖 BOT DURUMU\n\n"
+        f"AUTO MODE: {'AÇIK' if AUTO_MODE else 'KAPALI'}\n"
+        f"QUEUE: {len(pending_queue)}"
     )
 
 
 # --- APP ---
 app = ApplicationBuilder().token(TOKEN).build()
 
-# 🔹 ÖNCE KOMUTLAR
 app.add_handler(CommandHandler("auto_on", auto_on))
 app.add_handler(CommandHandler("auto_off", auto_off))
 app.add_handler(CommandHandler("durum", status))
 
-# 🔹 SONRA BUTON VE NORMAL MESAJ
 app.add_handler(CallbackQueryHandler(button))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
 
-# 🔹 EN SON KANAL DİNLEME
 app.add_handler(MessageHandler(filters.ChatType.CHANNEL, handle_channel))
 
 print("Bot çalışıyor...")

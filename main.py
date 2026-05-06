@@ -31,7 +31,7 @@ pending_queue = deque()
 
 # --- METİN DEĞİŞTİRME ---
 REPLACEMENTS = {
-    "titan panel": "Octora Tv"
+    "Titan Panel": "Octora Tv"
 }
 
 def replace_text(text):
